@@ -1,0 +1,9 @@
+{
+   "Histogram":"Un histograma simple de valores únicos de la variable 1. El valor del parámetro se puede utilizar para 'excluir' categorías con menos de 'n' recuentos",
+   "Comparison means": "Mostrar las medias de la variable 2 para valores únicos de la variable 1.",
+   "Comparison percentages": "Mostrar la distribución porcentual de los valores de la variable 2 distribuidos sobre los valores de la variable 1. El valor del parámetro se puede usar para 'excluir' categorías con menos de 'n' conteos.",
+   "Group comp. percentages": "Mostrar la distribución porcentual de los valores únicos de la variable 2 para cada valor único de la variable 1. El valor del parámetro se puede utilizar para 'excluir' categorías con menos de 'n' recuentos.",
+   "Comparison counts": "Mostrar la distribución de recuento de valores únicos de la variable 2 para cada valor único de la variable 1. El valor del parámetro se puede utilizar para 'excluir' categorías con menos de 'n' recuentos.",
+   "Map mean": "Mostrar mapa de medias de la variable 1",
+   "Map percent equals": "Mostrar un mapa de porcentajes del número de respuestas a la variable 1 que equivalen a un valor dado"
+}
