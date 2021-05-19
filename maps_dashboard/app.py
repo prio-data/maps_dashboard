@@ -1,9 +1,8 @@
-import contextlib
 import logging
 import json
 import importlib
 
-from fastapi import FastAPI,Response
+from fastapi import FastAPI,Response,Depends
 from sqlalchemy.exc import ProgrammingError
 import pandas as pd
 import geopandas as gpd
@@ -20,16 +19,29 @@ tpl_env = jinja2.Environment(
     autoescape = jinja2.select_autoescape(["html"])
 )
 
-@app.get("/hist/{vname:str}")
-def resolve_hist(vname:str, fmt:str="png", floor:int=0):
-    with contextlib.closing(orm.connect()) as con:
-        try:
-            df = orm.getvar(vname,con)
-        except ProgrammingError: 
-            return Response(status_code=404)
+def get_sess():
+    session = orm.get_session()
+    try:
+        yield session 
+    finally:
+        session.close()
 
-    with contextlib.closing(orm.get_session()) as sess:
-        df[vname] = orm.withmeta(df[vname],sess)
+def get_con():
+    con = orm.connect()
+    try:
+        yield con 
+    finally:
+        con.close()
+
+@app.get("/hist/{vname:str}")
+def resolve_hist(vname:str, fmt:str="png", floor:int=0, 
+        con = Depends(get_con), sess = Depends(get_sess)):
+    try:
+        df = orm.getvar(vname,con)
+    except ProgrammingError: 
+        return Response(status_code=404)
+
+    df[vname] = orm.withmeta(df[vname],sess)
 
     try:
         plotbytes, mimetype = plots.hist(df,floor=floor,format=fmt)
@@ -38,7 +50,9 @@ def resolve_hist(vname:str, fmt:str="png", floor:int=0):
     return Response(plotbytes, media_type=mimetype)
 
 @app.get("/comp/{v1}/{v2}/{plottype}")
-def resolve_comp(v1:str,v2:str,plottype:str="count",incat:bool=False,keepna=False,floor:int=0,fmt:str="png"):
+def resolve_comp(
+        v1:str, v2:str, plottype:str="count", incat:bool=False, keepna=False, floor:int=0, fmt:str="png",
+        con = Depends(get_con), sess = Depends(get_sess)):
     FUNCTIONS ={
             "count": plots.count,
             "mean": plots.mean,
@@ -46,30 +60,28 @@ def resolve_comp(v1:str,v2:str,plottype:str="count",incat:bool=False,keepna=Fals
             "grppst": lambda *args,**kwargs: plots.count(*args,**kwargs,pst=True,incat=True)
         }
 
-    with contextlib.closing(orm.connect()) as con:
-        try:
-            df = orm.getvar(v1,con).join(orm.getvar(v2,con))
-        except ProgrammingError: 
-            return Response(status_code=404)
+    try:
+        df = orm.getvar(v1,con).join(orm.getvar(v2,con))
+    except ProgrammingError: 
+        return Response(status_code=404)
 
     plotbytes,mimetype = FUNCTIONS[plottype](df,v1,v2,keepna=keepna,floor=floor,format=fmt)
 
     return Response(plotbytes, media_type=mimetype)
 
 @app.get("/map/{variable}/{plottype}/{arg}")
-def resolve_map(variable:str, plottype:str, arg:int, fmt:str="png"):
-    with contextlib.closing(orm.connect()) as con:
-        san = util.sanitizeVarname(variable)
-        data = pd.read_sql(
-                f"SELECT {san} "
-                f"AS var, pdet FROM data WHERE {san} > -1",
-                con)
-        scalemin,scalemax = data["var"].min(),data["var"].max()
+def resolve_map(variable:str, plottype:str, arg:int, fmt:str="png", con = Depends(get_con), sess = Depends(get_sess)):
+    san = util.sanitizeVarname(variable)
+    data = pd.read_sql(
+            f"SELECT {san} "
+            f"AS var, pdet FROM data WHERE {san} > -1",
+            con)
+    scalemin,scalemax = data["var"].min(),data["var"].max()
 
-        geodata = pd.read_sql("SELECT * FROM geodata",con)
-        geodata["geometry"] = geodata["geostring"].apply(wkt.loads)
-        geodata = gpd.GeoDataFrame(geodata,geometry="geometry")
-        geodata = geodata.set_crs("epsg:4326")
+    geodata = pd.read_sql("SELECT * FROM geodata",con)
+    geodata["geometry"] = geodata["geostring"].apply(wkt.loads)
+    geodata = gpd.GeoDataFrame(geodata,geometry="geometry")
+    geodata = geodata.set_crs("epsg:4326")
 
     base = data.copy()
     try:
@@ -98,9 +110,8 @@ def resolve_map(variable:str, plottype:str, arg:int, fmt:str="png"):
     return Response(picbytes,media_type=mimetype)
 
 @app.get("/")
-def resolve_dash():
-    with contextlib.closing(orm.get_session()) as sess:
-        variables = sess.query(orm.Variable).filter(orm.Variable.description!="NaN")
+def resolve_dash(sess = Depends(get_sess)):
+    variables = sess.query(orm.Variable).filter(orm.Variable.description!="NaN")
 
     plottypes = [
             {"name":"Histogram",
